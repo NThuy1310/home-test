@@ -1,0 +1,18 @@
+# Large grid stress test
+DIMENSION 100
+
+# Draw a diagonal line across the entire grid
+MOVE_TO 0,0
+LINE_TO 99,99
+
+# Draw another diagonal
+MOVE_TO 0,99
+LINE_TO 99,0
+
+# Draw horizontal line in middle
+MOVE_TO 0,50
+LINE_TO 99,50
+
+# Draw vertical line in middle
+MOVE_TO 50,0
+LINE_TO 50,99

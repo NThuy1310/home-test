@@ -1,0 +1,15 @@
+# Complex drawing example
+DIMENSION 10
+
+# Draw a box
+MOVE_TO 2,2
+LINE_TO 7,2
+LINE_TO 7,7
+LINE_TO 2,7
+LINE_TO 2,2
+
+# Draw diagonal lines
+MOVE_TO 0,0
+LINE_TO 9,9
+MOVE_TO 0,9
+LINE_TO 9,0
