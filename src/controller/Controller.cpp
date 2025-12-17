@@ -12,7 +12,7 @@ void Controller::printUsage(const char* programName) {
     std::cout << "\nOptions:\n";
     std::cout << "  --realtime        Enable real-time rendering (shows grid updates as commands execute)\n";
     std::cout << "\nCommands:\n";
-    std::cout << "  DIMENSION N       - Set grid size to N×N\n";
+    std::cout << "  DIMENSION N       - Set grid size to NxN\n";
     std::cout << "  MOVE_TO x,y       - Move robot to (x,y) without drawing\n";
     std::cout << "  LINE_TO x,y       - Move robot to (x,y) while drawing a line\n";
     std::cout << "\nExample command file:\n";
@@ -53,9 +53,8 @@ int Controller::run(const std::string& filename, bool realtimeMode) {
     CommandExecutor executor(mGrid, mRobot, renderCallback);
     executor.start(mCommandQueue);
 
-    // Parse commands from file (in main thread)
+    // 1) Parse commands from file
     std::cout << "Parsing commands from: " << filename << std::endl;
-    
     std::vector<ParseResult> parseResults = CommandParser::parseFile(filename);
 
     // Check if file could be opened
