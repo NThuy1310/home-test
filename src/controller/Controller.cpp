@@ -1,145 +1,147 @@
-#include "Controller.h"
-#include "../parser/CommandParser.h"
-#include "../renderer/GridRenderer.h"
+#include "controller/Controller.h"
+#include "commands/ICommand.h"
 #include <iostream>
-#include <sstream>
+#include <fstream>
+#include <iomanip>
 
-Controller::Controller() : mGrid(), mRobot(), mCommandQueue() {
-}
+Controller::Controller() = default;
 
-void Controller::printUsage(const char* programName) {
-    std::cout << "Usage: " << programName << " <command_file> [--realtime]\n";
-    std::cout << "\nOptions:\n";
-    std::cout << "  --realtime        Enable real-time rendering (shows grid updates as commands execute)\n";
-    std::cout << "\nCommands:\n";
-    std::cout << "  DIMENSION N       - Set grid size to NxN\n";
-    std::cout << "  MOVE_TO x,y       - Move robot to (x,y) without drawing\n";
-    std::cout << "  LINE_TO x,y       - Move robot to (x,y) while drawing a line\n";
-    std::cout << "\nExample command file:\n";
-    std::cout << "  DIMENSION 5\n";
-    std::cout << "  MOVE_TO 1,1\n";
-    std::cout << "  LINE_TO 3,3\n";
-    std::cout << "  LINE_TO 3,2\n";
-    std::cout << "\nExamples:\n";
-    std::cout << "  " << programName << " commands.txt\n";
-    std::cout << "  " << programName << " commands.txt --realtime\n";
-}
-
-int Controller::run(const std::string& filename, bool realtimeMode) {
-    // Create callback for real-time rendering
-    RenderCallback renderCallback = nullptr;
+// Main application loop
+void Controller::run() {
+    std::cout << "Robot Movement Application" << std::endl;
+    std::cout << "Type 'exit' or 'quit' to terminate the program" << std::endl;
+    std::cout << std::endl;
     
-    if (realtimeMode) {
-        std::cout << "Real-time rendering mode enabled\n" << std::endl;
+    while (true) {
+        // Get file path from user
+        std::string filename = getFilePathFromUser();
         
-        renderCallback = [this](const std::string& commandType, size_t lineNumber) {
-            // Clear screen and reposition cursor to top
-            std::cout << "\033[2J\033[H";
-            
-            std::cout << "=== Real-time Grid Rendering ===\n";
-            std::cout << "Last executed: " << commandType << " (line " << lineNumber << ")\n\n";
-            
-            if (mGrid.isInitialized()) {
-                GridRenderer::print(mGrid);
-            } else {
-                std::cout << "Grid not initialized yet...\n";
+        // Check for exit command
+        if (filename == "exit" || filename == "quit") {
+            std::cout << "Exiting application..." << std::endl;
+            break;
+        }
+        
+        // Process the file
+        processFile(filename);
+        std::cout << std::endl;
+    }
+}
+
+std::string Controller::getFilePathFromUser() {
+    std::cout << "Enter file path: ";
+    std::string filename;
+    std::getline(std::cin, filename);
+    return filename;
+}
+
+void Controller::processFile(const std::string& filename) {
+    try {
+        if (!isFileExists(filename)) {
+            std::cerr << "Error: File not found: " << filename << std::endl;
+            return;
+        }
+        
+        // Check syntax and parse commands
+        auto parseResult = Parser::parseFile(filename);
+        
+        if (parseResult.hasErrors) {
+            std::cerr << "Parsing errors found:" << std::endl;
+            for (const auto& error : parseResult.errors) {
+                std::cerr << "  " << error << std::endl;
             }
             
-            std::cout << std::flush;
-        };
-    }
-
-    // Create executor and start execution thread
-    CommandExecutor executor(mGrid, mRobot, renderCallback);
-    executor.start(mCommandQueue);
-
-    // 1) Parse commands from file
-    std::cout << "Parsing commands from: " << filename << std::endl;
-    std::vector<ParseResult> parseResults = CommandParser::parseFile(filename);
-
-    // Check if file could be opened
-    if (!parseResults.empty() && !parseResults[0].success && 
-        parseResults[0].line_number == 0) {
-        std::cerr << "Error: " << parseResults[0].error_message << std::endl;
-        mCommandQueue.shutdown();
-        executor.stop();
-        executor.wait();
-        return 1;
-    }
-
-    // Push parsed commands to queue
-    size_t commandsPushed = 0;
-    std::vector<std::string> parseErrors;
-
-    for (auto& result : parseResults) {
-        if (result.success && result.command) {
-            CommandWithMetadata cmdMeta(std::move(result.command), result.line_number);
-            mCommandQueue.push(std::move(cmdMeta));
-            ++commandsPushed;
-        } else if (!result.error_message.empty()) {
-            std::ostringstream oss;
-            oss << "Line " << result.line_number << ": " << result.error_message;
-            parseErrors.push_back(oss.str());
-        }
-    }
-
-    std::cout << "Parsed " << commandsPushed << " commands" << std::endl;
-
-    // Signal that parsing is complete
-    mCommandQueue.shutdown();
-    executor.stop();
-
-    // Wait for executor to finish
-    std::cout << "Executing commands..." << std::endl;
-    executor.wait();
-
-    // Collect results
-    std::vector<ExecutionResult> execResults = executor.getResults();
-
-    // Report parse errors
-    if (!parseErrors.empty()) {
-        std::cerr << "\n=== Parse Errors ===\n";
-        for (const auto& error : parseErrors) {
-            std::cerr << error << std::endl;
-        }
-    }
-
-    // Report execution errors
-    std::vector<std::string> execErrors;
-    for (const auto& result : execResults) {
-        if (!result.success) {
-            std::ostringstream oss;
-            oss << "Line " << result.line_number << " (" << result.command_type 
-                << "): " << result.error_message;
-            execErrors.push_back(oss.str());
-        }
-    }
-
-    if (!execErrors.empty()) {
-        std::cerr << "\n=== Execution Errors ===\n";
-        for (const auto& error : execErrors) {
-            std::cerr << error << std::endl;
-        }
-    }
-
-    // Render the grid (if not in real-time mode)
-    if (mGrid.isInitialized()) {
-        if (!realtimeMode) {
-            std::cout << "\n=== Final Grid ===\n";
-            GridRenderer::print(mGrid);
-        } else {
-            std::cout << "\n=== Rendering Complete ===\n";
-            std::cout << "All commands executed successfully.\n";
+            if (!askUserToContinue()) {
+                return;
+            }
         }
         
-        if (!parseErrors.empty() || !execErrors.empty()) {
-            std::cout << "\nNote: Grid rendered with errors. See above for details.\n";
-            return 1;
+        // Validate command bounds
+        Parser::validateCommandBounds(parseResult);
+        
+        if (parseResult.hasErrors) {
+            std::cerr << "Boundary validation errors:" << std::endl;
+            for (const auto& error : parseResult.errors) {
+                std::cerr << "  " << error << std::endl;
+            }
+            
+            if (!askUserToContinue()) {
+                return;
+            }
         }
-    } else {
-        std::cerr << "\nError: Grid was not initialized. No DIMENSION command found.\n";
-        return 1;
+        
+        // Create commands
+        auto commands = Parser::createCommands(parseResult);
+        
+        // Ensure DIMENSION command is first (already enforced by parser)
+        if (commands.empty() || commands[0]->getType() != "DIMENSION") {
+            std::cerr << "Error: DIMENSION command must be first" << std::endl;
+            return;
+        }
+
+        // Execute commands sequentially on shared grid/state
+        for (const auto& command : commands) {
+            if (!command->validate(mGrid)) {
+                std::cerr << "Error: validation failed for command " << command->getType() << std::endl;
+                return;
+            }
+            command->execute(mGrid, mRobot);
+        }
+
+        // Render final grid with indices
+        renderFinalGrid();
+
+        // Resert grid and robot state for next file
+        mGrid.reset();
+        mRobot.reset();
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+    }
+}
+
+bool Controller::isFileExists(const std::string& filename) {
+    std::ifstream file(filename);
+    return file.good();
+}
+
+bool Controller::askUserToContinue() {
+    std::cout << "Do you want to ignore errors and continue? (y/n): ";
+    std::string response;
+    std::getline(std::cin, response);
+    return response == "y" || response == "Y";
+}
+
+void Controller::renderFinalGrid() const {
+    const size_t size = mGrid.getSize();
+    if (size == 0) {
+        std::cout << "(Empty grid)" << std::endl;
+        return;
     }
 
-    return 0;
+    size_t indexWidth = 1;
+    size_t temp = (size > 0) ? size - 1 : 0;
+    while (temp >= 10) {
+        ++indexWidth;
+        temp /= 10;
+    }
+
+    std::cout << "Result:" << std::endl;
+
+    const int colWidth = static_cast<int>(indexWidth) + 1;
+
+    std::cout << std::setw(colWidth) << "";
+    for (size_t x = 0; x < size; ++x) {
+        std::cout << std::setw(colWidth) << x;
+    }
+    std::cout << std::endl;
+
+    for (size_t y = 0; y < size; ++y) {
+        std::cout << std::setw(colWidth) << y;
+        for (size_t x = 0; x < size; ++x) {
+            const char symbol = mGrid.isCellMarked(static_cast<int>(x), static_cast<int>(y)) ? '+' : '.';
+            std::cout << std::setw(colWidth) << symbol;
+        }
+        std::cout << std::endl;
+    }
 }

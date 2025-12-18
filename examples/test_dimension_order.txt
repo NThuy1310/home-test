@@ -1,0 +1,4 @@
+# Test: DIMENSION must come first
+MOVE_TO 1,1
+DIMENSION 5
+LINE_TO 3,3
