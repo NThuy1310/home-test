@@ -1,147 +1,56 @@
 #include "Grid.h"
-#include "../utils/BresenhamLine.h"
-#include <sstream>
+#include <stdexcept>
 
-void Grid::initialize(size_t gridSize) {
-    if (gridSize == 0) {
-        throw std::invalid_argument("Grid size must be positive");
+Grid::Grid() : mSize(0), mInitialized(false) {}
+
+void Grid::initialize(size_t size) {
+    // Guard against overflow: size*size must fit in size_t and be reasonably allocatable
+    if (size == 0) {
+        mSize = 0;
+        mCells.clear();
+        mInitialized = false;
+        return;
     }
 
-    std::lock_guard<std::mutex> lock(mMutex);
-    
-    mSize = gridSize;
+    const size_t max = std::numeric_limits<size_t>::max();
+    if (size > 0 && size > max / size) {
+        throw std::overflow_error("Grid size is too large to allocate");
+    }
+
+    const size_t total = size * size;
+    mSize = size;
+    mCells.resize(total, false);
     mInitialized = true;
-    mUseSparse = (gridSize >= SPARSE_THRESHOLD);
-    
-    if (mUseSparse) {
-        // Use sparse representation for large grids
-        mMarkedCells.clear();
-    } else {
-        // Use dense representation for small/medium grids
-        mDenseGrid.assign(gridSize, std::vector<char>(gridSize, '.'));
+}
+
+void Grid::markCell(const Point& point) {
+    if (isValidPoint(point)) {
+        mCells[point.y * mSize + point.x] = true;
     }
 }
 
-void Grid::markCell(int x, int y) {
-    std::lock_guard<std::mutex> lock(mMutex);
-    
-    if (!mInitialized) {
-        throw std::runtime_error("Grid not initialized. Use DIMENSION command first.");
-    }
-    
-    if (x < 0 || y < 0 || static_cast<size_t>(x) >= mSize || static_cast<size_t>(y) >= mSize) {
-        std::ostringstream oss;
-        oss << "Coordinates (" << x << ", " << y << ") out of bounds [0, " << mSize - 1 << "]";
-        throw std::out_of_range(oss.str());
-    }
-    
-    if (mUseSparse) {
-        mMarkedCells.insert(Point(x, y));
-    } else {
-        mDenseGrid[y][x] = '+';
-    }
+bool Grid::isValidPoint(const Point& point) const {
+    return point.x >= 0 && point.x < static_cast<int>(mSize) &&
+           point.y >= 0 && point.y < static_cast<int>(mSize);
 }
 
-void Grid::drawLine(const Point& from, const Point& to) {
-    // Validate coordinates first (will throw if invalid)
-    {
-        std::lock_guard<std::mutex> lock(mMutex);
-        
-        if (!mInitialized) {
-            throw std::runtime_error("Grid not initialized. Use DIMENSION command first.");
-        }
-        
-        if (!isValidCoordinate(from.x, from.y)) {
-            std::ostringstream oss;
-            oss << "Start coordinates (" << from.x << ", " << from.y 
-                << ") out of bounds [0, " << mSize - 1 << "]";
-            throw std::out_of_range(oss.str());
-        }
-        
-        if (!isValidCoordinate(to.x, to.y)) {
-            std::ostringstream oss;
-            oss << "End coordinates (" << to.x << ", " << to.y 
-                << ") out of bounds [0, " << mSize - 1 << "]";
-            throw std::out_of_range(oss.str());
-        }
-    }
-    
-    // Calculate line points (outside lock to reduce contention)
-    std::vector<Point> points = BresenhamLine::getLine(from, to);
-    
-    // Mark all points (with lock)
-    std::lock_guard<std::mutex> lock(mMutex);
-    
-    if (mUseSparse) {
-        for (const auto& point : points) {
-            mMarkedCells.insert(point);
-        }
-    } else {
-        for (const auto& point : points) {
-            mDenseGrid[point.y][point.x] = '+';
-        }
-    }
+size_t Grid::getSize() const {
+    return mSize;
 }
 
-char Grid::getCell(int x, int y) const {
-    std::lock_guard<std::mutex> lock(mMutex);
-    
-    if (!mInitialized) {
-        throw std::runtime_error("Grid not initialized");
-    }
-    
-    if (x < 0 || y < 0 || static_cast<size_t>(x) >= mSize || static_cast<size_t>(y) >= mSize) {
-        throw std::out_of_range("Coordinates out of bounds");
-    }
-    
-    if (mUseSparse) {
-        return mMarkedCells.find(Point(x, y)) != mMarkedCells.end() ? '+' : '.';
-    } else {
-        return mDenseGrid[y][x];
-    }
+bool Grid::isInitialized() const {
+    return mInitialized;
 }
 
-bool Grid::isValidCoordinate(int x, int y) const {
-    // Note: mutex should be locked by caller
-    return x >= 0 && y >= 0 && 
-           static_cast<size_t>(x) < mSize && 
-           static_cast<size_t>(y) < mSize;
+bool Grid::isCellMarked(int x, int y) const {
+    if (x >= 0 && x < static_cast<int>(mSize) && y >= 0 && y < static_cast<int>(mSize)) {
+        return mCells[y * mSize + x];
+    }
+    return false;
 }
 
-std::vector<std::pair<int, int>> Grid::getMarkedCells() const {
-    std::lock_guard<std::mutex> lock(mMutex);
-    
-    std::vector<std::pair<int, int>> cells;
-    
-    if (!mInitialized) {
-        return cells;
-    }
-    
-    if (mUseSparse) {
-        for (const auto& point : mMarkedCells) {
-            cells.emplace_back(point.y, point.x);
-        }
-    } else {
-        for (size_t y = 0; y < mSize; ++y) {
-            for (size_t x = 0; x < mSize; ++x) {
-                if (mDenseGrid[y][x] == '+') {
-                    cells.emplace_back(y, x);
-                }
-            }
-        }
-    }
-    
-    return cells;
-}
-
-void Grid::clear() {
-    std::lock_guard<std::mutex> lock(mMutex);
-    
-    if (mUseSparse) {
-        mMarkedCells.clear();
-    } else {
-        for (auto& row : mDenseGrid) {
-            std::fill(row.begin(), row.end(), '.');
-        }
-    }
+void Grid::reset() {
+    mSize = 0;
+    mCells.clear();
+    mInitialized = false;
 }
