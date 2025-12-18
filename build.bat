@@ -50,6 +50,7 @@ if %USE_NINJA%==1 (
         echo   - Using Scoop: scoop install ninja
         echo   - Download from: https://github.com/ninja-build/ninja/releases
         echo Attempting to continue with CMake...
+        set USE_NINJA=0
     )
 )
 
