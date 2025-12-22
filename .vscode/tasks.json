@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build: debug",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "${workspaceFolder}/build.sh",
+        "debug"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$gcc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "detail": "Configure and build Debug using CMake + Ninja/Make"
+    },
+    {
+      "label": "build: release",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "${workspaceFolder}/build.sh",
+        "release"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": ["$gcc"],
+      "group": "build",
+      "detail": "Configure and build Release using CMake + Ninja/Make"
+    }
+  ]
+}
